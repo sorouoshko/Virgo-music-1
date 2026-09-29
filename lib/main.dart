@@ -340,7 +340,7 @@ class MusicStore extends ChangeNotifier {
   Future<void> scanLocalMusic() async {
     try {
       var ok = await query.permissionsStatus();
-      if (!ok) ok = await query.requestPermission();
+      if (!ok) ok = await query.checkAndRequest();
       if (!ok) return;
       final raw = await query.querySongs(
         sortType: SongSortType.TITLE,
