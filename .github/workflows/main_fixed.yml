@@ -3,7 +3,8 @@ name: Build APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
   build:
@@ -23,41 +24,85 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: true
+          flutter-version: '3.47.5'
 
-      - name: Create Android platform files
+      - name: Create Android project
         run: flutter create . --platforms=android
 
-      - name: Add Android audio permissions
+      - name: Fix Android permissions
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path("android/app/src/main/AndroidManifest.xml")
           s = p.read_text()
-          if "READ_MEDIA_AUDIO" not in s:
-              i = s.find(">", s.find("<manifest"))
-              s = s[:i+1] + "\n<uses-permission android:name=" + chr(34) + "android.permission.READ_MEDIA_AUDIO" + chr(34) + "/>\n<uses-permission android:name=" + chr(34) + "android.permission.READ_EXTERNAL_STORAGE" + chr(34) + " android:maxSdkVersion=" + chr(34) + "32" + chr(34) + "/>" + s[i+1:]
-              p.write_text(s)
+
+          permissions = [
+              '<uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>',
+              '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>'
+          ]
+
+          for perm in permissions:
+              if perm not in s:
+                  s = s.replace("<application", perm + "\n    <application", 1)
+
+          p.write_text(s)
           PY
 
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Fix legacy on_audio_query Android namespace
+      - name: Fix on_audio_query Android
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path.home() / ".pub-cache/hosted/pub.dev/on_audio_query_android-1.1.0/android/build.gradle"
-          if not p.exists():
-              raise SystemExit(f"Plugin file not found: {p}")
           s = p.read_text()
+
           if "namespace" not in s:
-              s = s.replace("android {", 'android {\n    namespace "com.lucasjosino.on_audio_query"', 1)
-              p.write_text(s)
-          print("on_audio_query_android namespace fixed.")
+              s = s.replace(
+                  "android {",
+                  'android {\n    namespace "com.lucasjosino.on_audio_query"',
+                  1
+              )
+
+          # Make Java and Kotlin use JVM 17
+          s = s.replace(
+              "sourceCompatibility JavaVersion.VERSION_11",
+              "sourceCompatibility JavaVersion.VERSION_17"
+          )
+          s = s.replace(
+              "targetCompatibility JavaVersion.VERSION_11",
+              "targetCompatibility JavaVersion.VERSION_17"
+          )
+
+          p.write_text(s)
           PY
 
-      - name: Build release APK
+      - name: Configure Java/Kotlin 17
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/build.gradle.kts")
+          s = p.read_text()
+
+          if "JavaVersion.VERSION_17" not in s:
+              s = s.replace(
+                  "android {",
+                  '''android {
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }''',
+                  1
+              )
+
+          p.write_text(s)
+          PY
+
+      - name: Build APK
         run: flutter build apk --release
 
       - name: Upload APK
@@ -65,4 +110,3 @@ jobs:
         with:
           name: offline-cinematic-player-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
