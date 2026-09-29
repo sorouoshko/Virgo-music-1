@@ -1,0 +1,19 @@
+name: virgo_music
+description: Offline-first dark music player (V6 – merged V4 + V5 + Elderbrook mockup design).
+publish_to: 'none'
+version: 6.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  just_audio: ^0.9.46
+  on_audio_query: ^2.9.0
+  shared_preferences: ^2.5.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/covers/
