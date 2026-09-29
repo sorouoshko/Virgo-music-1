@@ -1,0 +1,112 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+
+      - name: Create Android project
+        run: flutter create . --platforms=android
+
+      - name: Fix Android permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+
+          permissions = [
+              '<uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>',
+              '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>'
+          ]
+
+          for perm in permissions:
+              if perm not in s:
+                  s = s.replace("<application", perm + "\n    <application", 1)
+
+          p.write_text(s)
+          PY
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Fix on_audio_query Android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path.home() / ".pub-cache/hosted/pub.dev/on_audio_query_android-1.1.0/android/build.gradle"
+          s = p.read_text()
+
+          if "namespace" not in s:
+              s = s.replace(
+                  "android {",
+                  'android {\n    namespace "com.lucasjosino.on_audio_query"',
+                  1
+              )
+
+          # Make Java and Kotlin use JVM 17
+          s = s.replace(
+              "sourceCompatibility JavaVersion.VERSION_11",
+              "sourceCompatibility JavaVersion.VERSION_17"
+          )
+          s = s.replace(
+              "targetCompatibility JavaVersion.VERSION_11",
+              "targetCompatibility JavaVersion.VERSION_17"
+          )
+
+          p.write_text(s)
+          PY
+
+      - name: Configure Java/Kotlin 17
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/build.gradle.kts")
+          s = p.read_text()
+
+          if "JavaVersion.VERSION_17" not in s:
+              s = s.replace(
+                  "android {",
+                  '''android {
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }''',
+                  1
+              )
+
+          p.write_text(s)
+          PY
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-cinematic-player-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
